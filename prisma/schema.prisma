@@ -1,0 +1,48 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Guest {
+  id          String       @id @default(uuid())
+  guestId     String       @unique
+  displayName String?
+  createdAt   DateTime     @default(now())
+  lastSeenAt  DateTime     @default(now())
+  hostedRooms Room[]       @relation("HostRooms")
+  memberships RoomMember[]
+
+  @@index([guestId])
+}
+
+model Room {
+  id          String       @id @default(uuid())
+  roomCode    String       @unique
+  hostGuestId String
+  isActive    Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  host        Guest        @relation("HostRooms", fields: [hostGuestId], references: [guestId], onDelete: Cascade)
+  members     RoomMember[]
+
+  @@index([roomCode])
+  @@index([hostGuestId])
+}
+
+model RoomMember {
+  id         String   @id @default(uuid())
+  roomId     String
+  guestId    String
+  joinedAt   DateTime @default(now())
+  lastSeenAt DateTime @default(now())
+  room       Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  guest      Guest    @relation(fields: [guestId], references: [guestId], onDelete: Cascade)
+
+  @@unique([roomId, guestId])
+  @@index([roomId])
+  @@index([guestId])
+}

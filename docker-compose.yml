@@ -1,0 +1,67 @@
+version: '3.8'
+
+services:
+  # Main Node.js Express / Socket.IO App
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: spotify_sync_app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/spotify_sync_rooms?schema=public
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=production_super_secret_jwt_key_music_rooms
+      - JWT_EXPIRES_IN=7d
+      - CORS_ORIGIN=*
+      - MAX_ROOM_MEMBERS=50
+      - ROOM_IDLE_TTL=1800
+      - SYNC_INTERVAL_MS=5000
+      - SCHEDULE_BUFFER_MS=1500
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: spotify_sync_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: spotify_sync_rooms
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d spotify_sync_rooms"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Redis (Playback State & Socket.IO Pub/Sub Adapter)
+  redis:
+    image: redis:7-alpine
+    container_name: spotify_sync_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+  redis_data:

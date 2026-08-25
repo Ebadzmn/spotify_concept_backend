@@ -1,0 +1,177 @@
+openapi: 3.0.0
+info:
+  title: Spotify Synchronized Listening Room API
+  version: 1.0.0
+  description: High-precision real-time synchronized listening room backend using Node.js, Express, Socket.IO, Redis, and PostgreSQL.
+paths:
+  /api/health:
+    get:
+      summary: Health check endpoint
+      responses:
+        '200':
+          description: Service healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  serverTime:
+                    type: integer
+                    example: 1755741600000
+
+  /api/auth/guest-session:
+    post:
+      summary: Create or resume a guest session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - guestId
+              properties:
+                guestId:
+                  type: string
+                  format: uuid
+                  example: 550e8400-e29b-41d4-a716-446655440000
+                displayName:
+                  type: string
+                  example: Alex
+      responses:
+        '200':
+          description: Session created or retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  guest:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      guestId:
+                        type: string
+                      displayName:
+                        type: string
+                  token:
+                    type: string
+                    description: JWT Bearer token for REST and Socket.IO auth
+
+  /api/rooms:
+    post:
+      summary: Create a new listening room (creator becomes host)
+      security:
+        - BearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                initialTrackId:
+                  type: string
+                  example: spotify:track:4cOdK2wGLETKBW3PvgPWqT
+      responses:
+        '201':
+          description: Room successfully created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  roomCode:
+                    type: string
+                    example: AB7K9X
+                  state:
+                    $ref: '#/components/schemas/RoomState'
+
+  /api/rooms/{roomCode}:
+    get:
+      summary: Get room details, member list, and authoritative playback state
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: roomCode
+          in: path
+          required: true
+          schema:
+            type: string
+            example: AB7K9X
+      responses:
+        '200':
+          description: Room details retrieved
+        '404':
+          description: Room not found
+
+  /api/rooms/{roomCode}/join:
+    post:
+      summary: Join an existing room
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: roomCode
+          in: path
+          required: true
+          schema:
+            type: string
+            example: AB7K9X
+      responses:
+        '200':
+          description: Room joined
+
+  /api/rooms/{roomCode}/leave:
+    post:
+      summary: Leave a room
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: roomCode
+          in: path
+          required: true
+          schema:
+            type: string
+            example: AB7K9X
+      responses:
+        '200':
+          description: Left room
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    RoomState:
+      type: object
+      properties:
+        roomId:
+          type: string
+        roomCode:
+          type: string
+        hostGuestId:
+          type: string
+        trackId:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [playing, paused, loading, transitioning]
+        basePositionMs:
+          type: integer
+        updatedAt:
+          type: integer
+        sequence:
+          type: integer
+        membersCount:
+          type: integer
