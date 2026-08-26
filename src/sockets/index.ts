@@ -24,6 +24,9 @@ export function setupSocketServer(httpServer: HttpServer): {
       credentials: true,
     },
     transports: ['websocket', 'polling'],
+    perMessageDeflate: false, // Disables compression overhead to ensure sub-millisecond real-time dispatch
+    pingInterval: 25000,
+    pingTimeout: 20000,
   });
 
   // Setup Redis Adapter for multi-instance horizontal scaling if not in test
@@ -56,7 +59,7 @@ export function setupSocketServer(httpServer: HttpServer): {
 
       const currentRoom = socket.data.currentRoomCode;
       if (currentRoom && guestId) {
-        // Wait a 5s grace period before evicting to allow mobile clients to reconnect without losing host status
+        // Wait a 60s grace period before evicting to allow mobile clients to reconnect without losing host status
         setTimeout(async () => {
           try {
             const sockets = await io.in(currentRoom).fetchSockets();
@@ -82,7 +85,7 @@ export function setupSocketServer(httpServer: HttpServer): {
           } catch (err) {
             logger.error({ err }, 'Error cleaning up room on disconnect');
           }
-        }, 5000);
+        }, 60000);
       }
     });
   });

@@ -32,7 +32,7 @@ export class PlaybackService {
     guestId: string,
     trackId?: string,
     positionMs?: number,
-    scheduleBufferMs: number = config.SCHEDULE_BUFFER_MS
+    scheduleBufferMs: number = 3000
   ): Promise<{ command: PlaybackCommand; newState: RoomState }> {
     const formattedCode = roomCode.toUpperCase();
     const state = await this.getValidatedHostState(formattedCode, guestId);
@@ -81,17 +81,16 @@ export class PlaybackService {
     roomCode: string,
     guestId: string,
     positionMs?: number,
-    scheduleBufferMs: number = config.SCHEDULE_BUFFER_MS
+    scheduleBufferMs: number = 0
   ): Promise<{ command: PlaybackCommand; newState: RoomState }> {
     const formattedCode = roomCode.toUpperCase();
     const state = await this.getValidatedHostState(formattedCode, guestId);
 
     const now = Date.now();
     const executeAt = now + scheduleBufferMs;
-    // Calculate expected position at executeAt
-    const positionAtExecute = positionMs !== undefined 
-      ? positionMs 
-      : this.calculateCurrentPosition(state, executeAt);
+    const positionAtExecute = positionMs !== undefined
+      ? positionMs
+      : this.calculateCurrentPosition(state, now);
 
     const nextSequence = state.sequence + 1;
     const commandId = `cmd_${generateCmdId()}`;
@@ -100,7 +99,7 @@ export class PlaybackService {
       ...state,
       status: 'paused',
       basePositionMs: positionAtExecute,
-      updatedAt: executeAt,
+      updatedAt: now,
       sequence: nextSequence,
     };
 
@@ -116,7 +115,7 @@ export class PlaybackService {
       issuedAt: now,
     };
 
-    logger.info({ roomCode: formattedCode, commandId, sequence: nextSequence, executeAt }, 'Issued PAUSE command');
+    logger.info({ roomCode: formattedCode, commandId, sequence: nextSequence, positionMs: positionAtExecute }, 'Issued instant PAUSE command');
     return { command, newState };
   }
 
@@ -168,22 +167,28 @@ export class PlaybackService {
     guestId: string,
     type: 'NEXT' | 'PREVIOUS' | 'TRACK_CHANGE',
     newTrackId: string,
-    scheduleBufferMs: number = 1500
+    scheduleBufferMs: number = 3000
   ): Promise<{ command: PlaybackCommand; newState: RoomState }> {
     const formattedCode = roomCode.toUpperCase();
     const state = await this.getValidatedHostState(formattedCode, guestId);
+
+    if (state.status === 'playing') {
+      throw new AppError(
+        'MUST_PAUSE_BEFORE_TRACK_CHANGE',
+        'Current track must be paused before changing tracks. Please pause playback first.',
+        400
+      );
+    }
 
     const now = Date.now();
     const executeAt = now + scheduleBufferMs;
     const nextSequence = state.sequence + 1;
     const commandId = `cmd_${generateCmdId()}`;
 
-    const currentStatus: PlaybackStatus = state.status === 'playing' ? 'playing' : 'paused';
-
     const newState: RoomState = {
       ...state,
       trackId: newTrackId,
-      status: currentStatus,
+      status: 'playing',
       basePositionMs: 0,
       updatedAt: executeAt,
       sequence: nextSequence,
@@ -201,7 +206,7 @@ export class PlaybackService {
       issuedAt: now,
     };
 
-    logger.info({ roomCode: formattedCode, commandId, sequence: nextSequence, newTrackId, currentStatus, executeAt }, 'Issued TRACK_CHANGE command');
+    logger.info({ roomCode: formattedCode, commandId, sequence: nextSequence, newTrackId, executeAt }, 'Issued TRACK_CHANGE command with 3s schedule buffer');
     return { command, newState };
   }
 

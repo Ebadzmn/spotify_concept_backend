@@ -61,7 +61,7 @@ export function registerPlayerHandlers(
       const parsed = playerPlaySchema.parse(data);
       const roomCode = parsed.roomCode.toUpperCase();
       const defaultBuffer = await getAdaptiveScheduleBufferMs(io, roomCode);
-      const scheduleBufferMs = parsed.scheduleBufferMs !== undefined ? parsed.scheduleBufferMs : defaultBuffer;
+      const scheduleBufferMs = parsed.scheduleBufferMs !== undefined ? parsed.scheduleBufferMs : Math.max(3000, defaultBuffer);
       const { command } = await PlaybackService.handlePlay(
         roomCode,
         guest.guestId,
@@ -84,12 +84,11 @@ export function registerPlayerHandlers(
     try {
       const parsed = playerPauseSchema.parse(data);
       const roomCode = parsed.roomCode.toUpperCase();
-      const scheduleBufferMs = await getAdaptiveScheduleBufferMs(io, roomCode);
       const { command } = await PlaybackService.handlePause(
         roomCode,
         guest.guestId,
         parsed.positionMs,
-        scheduleBufferMs,
+        0, // Instant pause: 0ms schedule buffer so all clients freeze simultaneously
       );
 
       io.to(roomCode).emit('player:command', command);
@@ -126,7 +125,8 @@ export function registerPlayerHandlers(
     try {
       const parsed = playerTrackChangeSchema.parse(data);
       const roomCode = parsed.roomCode.toUpperCase();
-      const scheduleBufferMs = await getAdaptiveScheduleBufferMs(io, roomCode);
+      const adaptiveBuffer = await getAdaptiveScheduleBufferMs(io, roomCode);
+      const scheduleBufferMs = Math.max(3000, adaptiveBuffer);
       const { command } = await PlaybackService.handleTrackChange(
         roomCode,
         guest.guestId,
@@ -148,7 +148,8 @@ export function registerPlayerHandlers(
     try {
       const parsed = playerTrackChangeSchema.parse(data);
       const roomCode = parsed.roomCode.toUpperCase();
-      const scheduleBufferMs = await getAdaptiveScheduleBufferMs(io, roomCode);
+      const adaptiveBuffer = await getAdaptiveScheduleBufferMs(io, roomCode);
+      const scheduleBufferMs = Math.max(3000, adaptiveBuffer);
       const { command } = await PlaybackService.handleTrackChange(
         roomCode,
         guest.guestId,
