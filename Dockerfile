@@ -5,6 +5,8 @@ FROM node:22-alpine AS builder
 
 WORKDIR /app
 
+RUN apk add --no-cache openssl libc6-compat
+
 # Install build dependencies
 COPY package*.json ./
 COPY tsconfig*.json ./
@@ -25,6 +27,8 @@ RUN npm run build
 FROM node:22-alpine AS runner
 
 WORKDIR /app
+
+RUN apk add --no-cache openssl libc6-compat
 
 ENV NODE_ENV=production
 ENV PORT=5000
