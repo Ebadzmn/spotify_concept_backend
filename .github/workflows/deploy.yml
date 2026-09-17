@@ -1,0 +1,199 @@
+name: Build Docker Image & Deploy to Server
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: production-deployment
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  # ============================================================================
+  # Stage 1: Build Docker Image in GitHub and Push to GitHub Container Registry
+  # ============================================================================
+  build-and-push:
+    name: Build & Push Docker Image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Lowercase Repository Owner
+        id: repo_meta
+        run: |
+          echo "owner=${GITHUB_REPOSITORY_OWNER,,}" >> $GITHUB_OUTPUT
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry (GHCR)
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push API Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ steps.repo_meta.outputs.owner }}/spotify-backend:latest
+            ghcr.io/${{ steps.repo_meta.outputs.owner }}/spotify-backend:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ============================================================================
+  # Stage 2: Deploy to Remote Server via SSH
+  # ============================================================================
+  deploy:
+    name: Deploy to Server
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Lowercase Repository Owner
+        id: repo_meta
+        run: |
+          echo "owner=${GITHUB_REPOSITORY_OWNER,,}" >> $GITHUB_OUTPUT
+
+      - name: Generate Production Configuration
+        env:
+          PORT: 5000
+          IMAGE_REPO: ${{ steps.repo_meta.outputs.owner }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          REDIS_URL: ${{ secrets.REDIS_URL }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET || 'c8f93e6b21d5a840e791b6f04c83d5a1928471e0b5c43d928a7e1f6d3b5c8a90' }}
+          JWT_EXPIRES_IN: ${{ secrets.JWT_EXPIRES_IN || '7d' }}
+          CORS_ORIGIN: ${{ secrets.CORS_ORIGIN || '*' }}
+          MAX_ROOM_MEMBERS: ${{ secrets.MAX_ROOM_MEMBERS || '50' }}
+          ROOM_IDLE_TTL: ${{ secrets.ROOM_IDLE_TTL || '1800' }}
+          SYNC_INTERVAL_MS: ${{ secrets.SYNC_INTERVAL_MS || '5000' }}
+          SCHEDULE_BUFFER_MS: ${{ secrets.SCHEDULE_BUFFER_MS || '1500' }}
+          RATE_LIMIT_WINDOW_MS: ${{ secrets.RATE_LIMIT_WINDOW_MS || '60000' }}
+          RATE_LIMIT_MAX_REQUESTS: ${{ secrets.RATE_LIMIT_MAX_REQUESTS || '120' }}
+        run: |
+          mkdir -p deploy-payload
+
+          cat << EOF > deploy-payload/.env
+          NODE_ENV=production
+          PORT=${PORT}
+          IMAGE_REPO=${IMAGE_REPO}
+          HOST_PORT=9888
+          EOF
+
+          # Append optional external DB/Redis if configured in secrets
+          if [ -n "${DATABASE_URL}" ]; then
+            echo "DATABASE_URL=${DATABASE_URL}" >> deploy-payload/.env
+          fi
+          if [ -n "${REDIS_URL}" ]; then
+            echo "REDIS_URL=${REDIS_URL}" >> deploy-payload/.env
+          fi
+
+          # Append app configuration
+          cat << EOF >> deploy-payload/.env
+          JWT_SECRET=${JWT_SECRET}
+          JWT_EXPIRES_IN=${JWT_EXPIRES_IN}
+          CORS_ORIGIN=${CORS_ORIGIN}
+          MAX_ROOM_MEMBERS=${MAX_ROOM_MEMBERS}
+          ROOM_IDLE_TTL=${ROOM_IDLE_TTL}
+          SYNC_INTERVAL_MS=${SYNC_INTERVAL_MS}
+          SCHEDULE_BUFFER_MS=${SCHEDULE_BUFFER_MS}
+          RATE_LIMIT_WINDOW_MS=${RATE_LIMIT_WINDOW_MS}
+          RATE_LIMIT_MAX_REQUESTS=${RATE_LIMIT_MAX_REQUESTS}
+          EOF
+
+          cp docker-compose.prod.yml deploy-payload/
+
+      - name: Deploy to Server via SSH
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST || '172.252.13.197' }}
+          SERVER_USER: ${{ secrets.SERVER_USER || 'root' }}
+          SERVER_PASS: ${{ secrets.SERVER_PASSWORD }}
+          SERVER_PORT: ${{ secrets.SERVER_SSH_PORT || '22' }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_ACTOR: ${{ github.actor }}
+          DEPLOY_PATH: "/adnan/spotify-backend"
+          HOST_PORT: "9888"
+        run: |
+          set -e
+          sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
+
+          TARGET_HOST="${SERVER_HOST}"
+          TARGET_USER="${SERVER_USER}"
+          TARGET_PORT="${SERVER_PORT}"
+          export SSHPASS="$SERVER_PASS"
+
+          if [ -z "$SSHPASS" ]; then
+            echo "❌ ERROR: SERVER_PASSWORD secret is missing in GitHub repository secrets!"
+            exit 1
+          fi
+
+          echo "🚀 Testing SSH connection to ${TARGET_USER}@${TARGET_HOST}:${TARGET_PORT}..."
+          sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p "$TARGET_PORT" "${TARGET_USER}@${TARGET_HOST}" "echo '✅ SSH connection successful!'"
+
+          # 1. Create target folder on VPS
+          echo "📁 Creating remote folder ${DEPLOY_PATH}..."
+          sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p "$TARGET_PORT" "${TARGET_USER}@${TARGET_HOST}" "
+            mkdir -p ${DEPLOY_PATH}
+            if ! command -v docker &>/dev/null; then
+              echo '📦 Installing Docker...'
+              curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
+              sh /tmp/get-docker.sh
+            fi
+          "
+
+          # 2. Upload .env and docker-compose.prod.yml
+          echo "📤 Uploading deployment configs to ${DEPLOY_PATH}..."
+          sshpass -e scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -P "$TARGET_PORT" deploy-payload/.env deploy-payload/docker-compose.prod.yml "${TARGET_USER}@${TARGET_HOST}:${DEPLOY_PATH}/"
+
+          # 3. Pull latest image and launch containers
+          echo "🐳 Launching containers..."
+          sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p "$TARGET_PORT" "${TARGET_USER}@${TARGET_HOST}" "
+            set -e
+            cd ${DEPLOY_PATH}
+            chmod 600 .env
+
+            # Open firewall port if ufw is active
+            if command -v ufw &>/dev/null && ufw status | grep -q 'Status: active'; then
+              ufw allow ${HOST_PORT}/tcp || true
+              ufw reload || true
+            fi
+
+            echo '🔐 Authenticating with GitHub Container Registry...'
+            echo \"$GH_TOKEN\" | docker login ghcr.io -u \"$GH_ACTOR\" --password-stdin
+
+            echo '📥 Pulling latest Docker image...'
+            docker compose -f docker-compose.prod.yml pull
+
+            echo '🚀 Starting containers...'
+            docker compose -f docker-compose.prod.yml up -d --remove-orphans
+            docker image prune -f
+
+            echo '⏳ Waiting for service to start...'
+            sleep 10
+
+            echo '📊 Container status:'
+            docker compose -f docker-compose.prod.yml ps
+
+            echo '📋 Container logs:'
+            docker compose -f docker-compose.prod.yml logs --tail 25 || true
+          "
+
+          echo "🎉 Deployment successfully completed!"
+          echo "👉 Accessible at: http://${TARGET_HOST}:${HOST_PORT}"
