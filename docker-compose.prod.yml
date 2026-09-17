@@ -55,6 +55,9 @@ services:
   # ----------------------------------------------------------------------------
   app:
     image: ghcr.io/${IMAGE_REPO:-ebadzmn}/spotify-backend:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: adnan-spotify-api
     restart: always
     ports:
