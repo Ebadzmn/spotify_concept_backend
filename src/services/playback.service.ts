@@ -32,7 +32,7 @@ export class PlaybackService {
     guestId: string,
     trackId?: string,
     positionMs?: number,
-    scheduleBufferMs: number = 3000
+    scheduleBufferMs: number = 300
   ): Promise<{ command: PlaybackCommand; newState: RoomState }> {
     const formattedCode = roomCode.toUpperCase();
     const state = await this.getValidatedHostState(formattedCode, guestId);
@@ -81,16 +81,17 @@ export class PlaybackService {
     roomCode: string,
     guestId: string,
     positionMs?: number,
-    scheduleBufferMs: number = 0
+    scheduleBufferMs: number = 150
   ): Promise<{ command: PlaybackCommand; newState: RoomState }> {
     const formattedCode = roomCode.toUpperCase();
     const state = await this.getValidatedHostState(formattedCode, guestId);
 
     const now = Date.now();
     const executeAt = now + scheduleBufferMs;
+    // Calculate precise position at the moment of executeAt
     const positionAtExecute = positionMs !== undefined
       ? positionMs
-      : this.calculateCurrentPosition(state, now);
+      : this.calculateCurrentPosition(state, executeAt);
 
     const nextSequence = state.sequence + 1;
     const commandId = `cmd_${generateCmdId()}`;
@@ -99,7 +100,7 @@ export class PlaybackService {
       ...state,
       status: 'paused',
       basePositionMs: positionAtExecute,
-      updatedAt: now,
+      updatedAt: executeAt,
       sequence: nextSequence,
     };
 
@@ -115,7 +116,7 @@ export class PlaybackService {
       issuedAt: now,
     };
 
-    logger.info({ roomCode: formattedCode, commandId, sequence: nextSequence, positionMs: positionAtExecute }, 'Issued instant PAUSE command');
+    logger.info({ roomCode: formattedCode, commandId, sequence: nextSequence, positionMs: positionAtExecute, executeAt }, 'Issued synchronized PAUSE command');
     return { command, newState };
   }
 

@@ -61,7 +61,11 @@ export function registerPlayerHandlers(
       const parsed = playerPlaySchema.parse(data);
       const roomCode = parsed.roomCode.toUpperCase();
       const defaultBuffer = await getAdaptiveScheduleBufferMs(io, roomCode);
-      const scheduleBufferMs = parsed.scheduleBufferMs !== undefined ? parsed.scheduleBufferMs : Math.max(3000, defaultBuffer);
+      // For resume/play, default to low-latency buffer (250-400ms) unless explicitly specified
+      const scheduleBufferMs = parsed.scheduleBufferMs !== undefined 
+        ? parsed.scheduleBufferMs 
+        : Math.min(400, Math.max(250, defaultBuffer));
+
       const { command } = await PlaybackService.handlePlay(
         roomCode,
         guest.guestId,
@@ -84,11 +88,13 @@ export function registerPlayerHandlers(
     try {
       const parsed = playerPauseSchema.parse(data);
       const roomCode = parsed.roomCode.toUpperCase();
+      // Synchronized 150ms buffer so host and listener network latency is absorbed and both pause at the exact same millisecond
+      const pauseBufferMs = 150;
       const { command } = await PlaybackService.handlePause(
         roomCode,
         guest.guestId,
         parsed.positionMs,
-        0, // Instant pause: 0ms schedule buffer so all clients freeze simultaneously
+        pauseBufferMs,
       );
 
       io.to(roomCode).emit('player:command', command);
