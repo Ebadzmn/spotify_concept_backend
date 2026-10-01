@@ -1,5 +1,5 @@
 datasource db {
-  provider = "postgresql"
+  provider = "mongodb"
   url      = env("DATABASE_URL")
 }
 
@@ -9,19 +9,17 @@ generator client {
 }
 
 model Guest {
-  id          String       @id @default(uuid())
+  id          String       @id @default(auto()) @map("_id") @db.ObjectId
   guestId     String       @unique
   displayName String?
   createdAt   DateTime     @default(now())
   lastSeenAt  DateTime     @default(now())
   hostedRooms Room[]       @relation("HostRooms")
   memberships RoomMember[]
-
-  @@index([guestId])
 }
 
 model Room {
-  id          String       @id @default(uuid())
+  id          String       @id @default(auto()) @map("_id") @db.ObjectId
   roomCode    String       @unique
   hostGuestId String
   isActive    Boolean      @default(true)
@@ -30,12 +28,11 @@ model Room {
   host        Guest        @relation("HostRooms", fields: [hostGuestId], references: [guestId], onDelete: Cascade)
   members     RoomMember[]
 
-  @@index([roomCode])
   @@index([hostGuestId])
 }
 
 model RoomMember {
-  id         String   @id @default(uuid())
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
   roomId     String
   guestId    String
   joinedAt   DateTime @default(now())
@@ -47,3 +44,4 @@ model RoomMember {
   @@index([roomId])
   @@index([guestId])
 }
+
