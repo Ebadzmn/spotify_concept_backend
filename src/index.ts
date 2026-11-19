@@ -1,4 +1,5 @@
 import http from 'http';
+import os from 'os';
 import { createApp } from './app.js';
 import { setupSocketServer } from './sockets/index.js';
 import { config } from './config/index.js';
@@ -6,14 +7,60 @@ import { logger } from './lib/logger.js';
 import { prisma } from './lib/prisma.js';
 import { getRedisClient, getRedisPubClient, getRedisSubClient } from './lib/redis.js';
 
+function getNetworkAddresses(): { name: string; address: string }[] {
+  const interfaces = os.networkInterfaces();
+  const addresses: { name: string; address: string }[] = [];
+
+  for (const [name, entries] of Object.entries(interfaces)) {
+    if (!entries) continue;
+    for (const entry of entries) {
+      if (entry.family === 'IPv4' && !entry.internal) {
+        addresses.push({ name, address: entry.address });
+      }
+    }
+  }
+
+  return addresses;
+}
+
 async function bootstrap() {
   const app = createApp();
   const server = http.createServer(app);
   const { io, syncTimer } = setupSocketServer(server);
 
-  server.listen(config.PORT, () => {
-    logger.info(`Synchronized Music Room server started on port ${config.PORT} [${config.NODE_ENV}]`);
-    logger.info(`Swagger API docs available at http://localhost:${config.PORT}/api/docs`);
+  server.listen(config.PORT, '0.0.0.0', () => {
+    const networkAddresses = getNetworkAddresses();
+    const networkUrls = networkAddresses.map(
+      (net) => `http://${net.address}:${config.PORT} (${net.name})`
+    );
+    const swaggerNetworkUrls = networkAddresses.map(
+      (net) => `http://${net.address}:${config.PORT}/api/docs`
+    );
+    const socketNetworkUrls = networkAddresses.map(
+      (net) => `ws://${net.address}:${config.PORT}`
+    );
+
+    logger.info(
+      {
+        env: config.NODE_ENV,
+        port: config.PORT,
+        local: [
+          `http://localhost:${config.PORT}`,
+          `http://127.0.0.1:${config.PORT}`,
+        ],
+        network: networkUrls.length ? networkUrls : ['No external IPv4 network interface detected'],
+        health: `http://localhost:${config.PORT}/api/health`,
+        swagger: [
+          `http://localhost:${config.PORT}/api/docs`,
+          ...swaggerNetworkUrls,
+        ],
+        socketIO: [
+          `ws://localhost:${config.PORT}`,
+          ...socketNetworkUrls,
+        ],
+      },
+      `🚀 Synchronized Music Room server started on port ${config.PORT} [${config.NODE_ENV}]`
+    );
   });
 
   // Graceful shutdown handling

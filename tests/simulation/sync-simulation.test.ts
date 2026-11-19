@@ -10,6 +10,7 @@ import { PlaybackCommand, ClockPongPayload } from '../../src/types/index.js';
 
 describe('10-Client Multi-Latency Synchronization Simulation', () => {
   let server: http.Server;
+  let io: ReturnType<typeof setupSocketServer>['io'];
   let serverPort: number;
   let syncTimer: NodeJS.Timeout;
   let redisMock: any;
@@ -22,6 +23,7 @@ describe('10-Client Multi-Latency Synchronization Simulation', () => {
     const app = createApp();
     server = http.createServer(app);
     const socketSetup = setupSocketServer(server);
+    io = socketSetup.io;
     syncTimer = socketSetup.syncTimer;
 
     await new Promise<void>((resolve) => {
@@ -35,9 +37,15 @@ describe('10-Client Multi-Latency Synchronization Simulation', () => {
 
   afterAll(async () => {
     clearInterval(syncTimer);
-    await new Promise<void>((resolve) => {
-      server.close(() => resolve());
-    });
+    if (io) {
+      await new Promise<void>((resolve) => {
+        io.close(() => resolve());
+      });
+    } else if (server) {
+      await new Promise<void>((resolve) => {
+        server.close(() => resolve());
+      });
+    }
   }, 10000);
 
   it('should synchronize 10 virtual clients with diverse simulated network latencies (20ms - 500ms)', async () => {
@@ -159,6 +167,7 @@ describe('10-Client Multi-Latency Synchronization Simulation', () => {
       roomCode,
       trackId: 'spotify:track:demo123',
       positionMs: 0,
+      scheduleBufferMs: 1500,
     });
 
     // Wait for command broadcast and processing

@@ -173,14 +173,6 @@ export class PlaybackService {
     const formattedCode = roomCode.toUpperCase();
     const state = await this.getValidatedHostState(formattedCode, guestId);
 
-    if (state.status === 'playing') {
-      throw new AppError(
-        'MUST_PAUSE_BEFORE_TRACK_CHANGE',
-        'Current track must be paused before changing tracks. Please pause playback first.',
-        400
-      );
-    }
-
     const now = Date.now();
     const executeAt = now + scheduleBufferMs;
     const nextSequence = state.sequence + 1;

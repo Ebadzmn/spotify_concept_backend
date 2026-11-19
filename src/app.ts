@@ -9,6 +9,7 @@ import { config } from './config/index.js';
 import { authRouter } from './routes/auth.routes.js';
 import { roomRouter } from './routes/room.routes.js';
 import { errorHandler } from './middleware/errorHandler.js';
+import { requestLogger } from './middleware/requestLogger.js';
 
 const swaggerDocPath = path.join(process.cwd(), 'src', 'docs', 'swagger.yaml');
 
@@ -28,6 +29,7 @@ export function createApp(): Express {
 
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
+  app.use(requestLogger);
 
   // Global API Rate Limiter
   const limiter = rateLimit({

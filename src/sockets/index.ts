@@ -12,6 +12,7 @@ import { startPeriodicSyncEngine } from './syncTicker.js';
 import { RoomService } from '../services/room.service.js';
 import { logger } from '../lib/logger.js';
 import { config } from '../config/index.js';
+import { attachServerSocketLogger, attachClientSocketLogger } from './socketLogger.js';
 
 export function setupSocketServer(httpServer: HttpServer): {
   io: SocketIOServer<ClientToServerEvents, ServerToClientEvents, any, SocketData>;
@@ -41,11 +42,14 @@ export function setupSocketServer(httpServer: HttpServer): {
     }
   }
 
+  // Attach room broadcast logger
+  attachServerSocketLogger(io);
+
   // Socket Auth Middleware
   io.use(socketAuthMiddleware);
 
   io.on('connection', (socket) => {
-    logger.info({ socketId: socket.id, guestId: socket.data.guest.guestId }, 'Socket connected');
+    attachClientSocketLogger(socket);
 
     // Register all event sub-handlers
     registerClockHandlers(io, socket);
@@ -55,7 +59,7 @@ export function setupSocketServer(httpServer: HttpServer): {
 
     socket.on('disconnect', (reason) => {
       const guestId = socket.data.guest?.guestId;
-      logger.info({ socketId: socket.id, guestId, reason }, 'Socket disconnected');
+      logger.info({ socketId: socket.id, guestId, reason }, '🔴 [SOCKET DISCONNECTED]');
 
       const currentRoom = socket.data.currentRoomCode;
       if (currentRoom && guestId) {
