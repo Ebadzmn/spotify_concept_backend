@@ -94,7 +94,7 @@ jobs:
           NODE_ENV=production
           PORT=${PORT}
           IMAGE_REPO=${IMAGE_REPO}
-          HOST_PORT=9888
+          HOST_PORT=7777
           EOF
 
           # Append optional external DB/Redis if configured in secrets
@@ -129,7 +129,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_ACTOR: ${{ github.actor }}
           DEPLOY_PATH: "/adnan/spotify-backend"
-          HOST_PORT: "9888"
+          HOST_PORT: "7777"
         run: |
           set -e
           sudo apt-get update -qq && sudo apt-get install -y -qq sshpass

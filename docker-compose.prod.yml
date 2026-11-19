@@ -54,14 +54,14 @@ services:
   # 3. Express.js & Socket.IO Application Server
   # ----------------------------------------------------------------------------
   app:
-    image: ghcr.io/${IMAGE_REPO:-ebadzmn}/spotify-backend:latest
+    image: ghcr.io/${IMAGE_REPO:-adnanmahmud0}/spotify-backend:latest
     build:
       context: .
       dockerfile: Dockerfile
     container_name: adnan-spotify-api
     restart: always
     ports:
-      - "${HOST_PORT:-9888}:5000"
+      - "${HOST_PORT:-7777}:5000"
     env_file:
       - .env
     environment:
